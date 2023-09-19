@@ -15,7 +15,7 @@ def evaluate_answer(user_answer, correct_answer):
     return similarity_ratio >= 80  # Adjust the similarity threshold as needed
 
 def main():
-    st.title("Automatic Answer Evaluation App")
+    st.title("Automatic Answer Evaluation")
 
     # Load questions and answers from a JSON file
     questions_data = load_questions_from_json("questions.json")

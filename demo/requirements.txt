@@ -2,5 +2,6 @@ streamlit==0.85.1
 jsonlib-python3==1.6.1
 fuzzywuzzy==0.18.0
 python-Levenshtein==0.12.2
+altair==4.0
 protobuf==3.19.0
 
