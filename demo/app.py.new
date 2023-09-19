@@ -1,0 +1,28 @@
+    if question_index < len(questions_data):
+        current_question = questions_data[question_index]
+        st.write("Question:", current_question["question"])
+        options = current_question.get("options", [])
+        if options:
+            st.write("Options:", options)
+        
+        user_answer = st.text_area("Your Answer:")
+        submitted = st.button("Submit Answer")
+    
+        if submitted:
+            # Set the session_state variable here
+            st.session_state["input-0"] = user_answer
+            
+            correct_answer = current_question.get("correct_answer", "")
+            supporting_text = current_question.get("supporting_text", "")
+    
+            # Evaluate the user's answer
+            is_correct = evaluate_answer(user_answer, correct_answer)
+    
+            # Display result
+            if is_correct:
+                st.success("Correct!")
+                correct_answers += 1
+            else:
+                st.error("Incorrect. Try again.")
+            question_index += 1
+
