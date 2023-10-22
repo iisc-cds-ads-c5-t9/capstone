@@ -4,8 +4,10 @@ import random
 from sentence_transformers import SentenceTransformer
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
+from siamese_network import SiameseLSTM
+import pickle
 
-# Load your Siamese network model and other necessary libraries here
+# Load Siamese network model and other necessary libraries here
 import torch
 import torchtext
 from torch.nn.utils.rnn import pad_sequence
@@ -16,9 +18,6 @@ def load_questions_from_json(json_file):
     with open(json_file, 'r') as file:
         data = json.load(file)
     return random.sample(data, 10)  # Select 10 random samples
-
-def get_embedding(text):
-    return model.encode([text])[0]
 
 def get_random_samples(data, sample_size=10):
     return random.sample(data, sample_size)
@@ -34,27 +33,60 @@ def modify_question_with_option(question, option):
 # Initialize the SBERT model
 sbert_model = SentenceTransformer('paraphrase-distilroberta-base-v1')
 
-# Initialize your Siamese network model here (replace with your model)
-# siamese_model = YourSiameseNetwork()
+vocab_path = './siamese_network_vocab.pkl'
+try:
+    with open(vocab_path, 'rb') as vocab_file:
+        vocab = pickle.load(vocab_file)
+except:
+    vocab = {}
+
+vocab_size = 16094
+hidden_dim = 64
+embedding_dim = 100
+
+siamese_model = SiameseLSTM(vocab_size, embedding_dim, hidden_dim)
+
+model_weights = torch.load('./siamese_model.pt')
+siamese_model.load_state_dict(model_weights)
+
+siamese_model.eval()
 
 def get_embedding_sbert(text):
     return sbert_model.encode([text])[0]
 
-# Function to compute similarity using your Siamese network
+def preprocess_text_with_siamese(text):
+    # Tokenize and preprocess the text as needed for Siamese model
+    tokenizer = torchtext.data.utils.get_tokenizer('basic_english') 
+    tokens = tokenizer(text)
+    
+    # Convert tokens to numerical tokens using the vocabulary
+    numerical_tokens = [vocab[token] for token in tokens if token in vocab]
+
+    # Pad or truncate the numerical tokens to a fixed length (max_sequence_length)
+    max_sequence_length = 128 
+    if len(numerical_tokens) < max_sequence_length:
+        numerical_tokens += [0] * (max_sequence_length - len(numerical_tokens))
+    else:
+        numerical_tokens = numerical_tokens[:max_sequence_length]
+
+    # Convert the numerical tokens to a PyTorch tensor
+    numerical_tensor = torch.tensor(numerical_tokens)
+    
+    return numerical_tensor
+
+# Function to compute similarity using Siamese network
 def compute_similarity_siamese(text1, text2):
-    # Preprocess the text data (tokenization, padding, etc.) using your Siamese model
-    # Replace this with your actual preprocessing code
     processed_text1 = preprocess_text_with_siamese(text1)
     processed_text2 = preprocess_text_with_siamese(text2)
     
-    # Make predictions using your Siamese model
+    # Make predictions using Siamese model
     with torch.no_grad():
         similarity_score = siamese_model(processed_text1, processed_text2)
     return similarity_score
 
 def compute_similarity_sbert(text1, text2):
-    emb1 = get_embedding(text1)
-    emb2 = get_embedding(text2)
+    emb1 = get_embedding_sbert(text1)
+    emb2 = get_embedding_sbert(text2)
     emb1_2d = emb1.reshape(1, -1)
     emb2_2d = emb2.reshape(1, -1)
     similarity = cosine_similarity(emb1_2d, emb2_2d)[0][0]
@@ -103,7 +135,7 @@ def main():
             # Compute similarity using SBERT
             similarity_score_sbert = compute_similarity_sbert(modified_option, support_text) * 100
             
-            # Compute similarity using your Siamese network
+            # Compute similarity using Siamese network
             similarity_score_siamese = compute_similarity_siamese(modified_option, support_text) * 100
 
             # Highlight the option in bold if it's used in the modified question
