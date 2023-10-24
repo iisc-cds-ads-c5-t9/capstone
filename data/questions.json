@@ -1,0 +1,25 @@
+[
+    {
+        "question": "What is the Python library commonly used for data manipulation and analysis?",
+        "options": ["Pandas", "Numpy", "Matplotlib", "Scikit-Learn"],
+        "correct_answer": "Pandas",
+        "supporting_text": "Pandas is a powerful library for data manipulation and analysis in Python."
+    },
+    {
+        "question": "Which of the following is used for unsupervised machine learning?",
+        "options": ["Linear Regression", "Decision Trees", "K-Means Clustering", "Logistic Regression"],
+        "correct_answer": "K-Means Clustering",
+        "supporting_text": "K-Means Clustering is a popular technique for unsupervised machine learning."
+    },
+    {
+        "question": "What is the purpose of EDA in data science?",
+        "correct_answer": "Exploratory Data Analysis",
+        "supporting_text": "Exploratory Data Analysis (EDA) is the process of analyzing data sets by visually and statistically summarizing their main characteristics."
+    },
+    {
+        "question": "What does SQL stand for?",
+        "correct_answer": "Structured Query Language",
+        "supporting_text": "SQL (Structured Query Language) is a domain-specific language used in programming and managing relational databases."
+    }
+]
+
