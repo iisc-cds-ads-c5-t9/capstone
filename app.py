@@ -13,6 +13,31 @@ from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, TensorDataset
 import pandas as pd
 
+if 'sbert_model' not in st.session_state:
+    st.session_state.sbert_model = SentenceTransformer('paraphrase-distilroberta-base-v1')
+
+
+if 'siamese_model' not in st.session_state:
+    vocab_path = './siamese_network_vocab.pkl'
+    try:
+        with open(vocab_path, 'rb') as vocab_file:
+            vocab = pickle.load(vocab_file)
+    except:
+        vocab = {}
+
+    vocab_size = len(vocab)
+    hidden_dim = 64
+    embedding_dim = 100
+
+    st.session_state.vocab = vocab
+
+    siamese_model = SiameseLSTM(vocab_size, embedding_dim, hidden_dim)
+
+    model_weights = torch.load('./siamese_model.pt')
+    siamese_model.load_state_dict(model_weights)
+    siamese_model.eval()
+    st.session_state.siamese_model = siamese_model
+
 # load the questions and answers from the JSON file
 def load_questions_from_json(json_file):
     with open(json_file, 'r') as file:
@@ -30,30 +55,9 @@ def modify_question_with_option(question, option):
             return modified_question.lower().replace(word, option).capitalize(), option
     return question + " " + option, None
 
-# Initialize the SBERT model
-sbert_model = SentenceTransformer('paraphrase-distilroberta-base-v1')
-
 def get_embedding_sbert(text):
+    sbert_model = st.session_state.sbert_model
     return sbert_model.encode([text])[0]
-
-# siamese networks model
-vocab_path = './siamese_network_vocab.pkl'
-try:
-    with open(vocab_path, 'rb') as vocab_file:
-        vocab = pickle.load(vocab_file)
-except:
-    vocab = {}
-
-vocab_size = len(vocab)
-hidden_dim = 64
-embedding_dim = 100
-
-siamese_model = SiameseLSTM(vocab_size, embedding_dim, hidden_dim)
-
-model_weights = torch.load('./siamese_model.pt')
-siamese_model.load_state_dict(model_weights)
-
-siamese_model.eval()
 
 def preprocess_text_with_siamese(text):
     # Tokenize and preprocess the text as needed for Siamese model
@@ -61,6 +65,7 @@ def preprocess_text_with_siamese(text):
     tokens = tokenizer(text)
     
     # Convert tokens to numerical tokens using the vocabulary
+    vocab = st.session_state.vocab
     numerical_tokens = [vocab[token] for token in tokens if token in vocab]
 
     # Pad or truncate the numerical tokens to a fixed length (max_sequence_length)
@@ -83,6 +88,7 @@ def compute_similarity_siamese(text1, text2):
     processed_text1 = pad_sequence(processed_text1, batch_first=True, padding_value=0)
     processed_text2 = pad_sequence(processed_text2, batch_first=True, padding_value=0)
 
+    siamese_model = st.session_state.siamese_model
     # Make predictions using Siamese model
     with torch.no_grad():
         output1, output2 = siamese_model(processed_text1, processed_text2)
@@ -100,41 +106,36 @@ def compute_similarity_sbert(text1, text2):
 def main():
     st.title("Automated Answer Evaluation")
 
-    # Check session state and populate if necessary
-    if 'samples' not in st.session_state:
-        st.session_state.samples = None  # Initialize to None initially
-
-    if 'current_question' not in st.session_state:
-        st.session_state.current_question = None
-
-    if 'correct_answer' not in st.session_state:
-        st.session_state.correct_answer = None
-
-    # Load all data initially only if not already loaded
-    if st.session_state.samples is None:
-        all_data = load_questions_from_json("./data/sciq/train.json")
-        st.session_state.samples = get_random_samples(all_data)
+    # Load all data initially if not already loaded
+    if 'all_data' not in st.session_state:
+        st.session_state.all_data = load_questions_from_json("./data/sciq/train.json")
 
     # Display a button to go to the next question
     if st.button('Next'):
-        st.session_state.samples = get_random_samples(all_data)
-
-    # Retrieve the current question and correct answer
-    current_question = st.session_state.current_question
-    correct_answer = st.session_state.correct_answer
-
-    if current_question is None:
-        current_question = random.choice(st.session_state.samples)
+        # Update current_question and correct_answer with a new random question
+        current_question = random.choice(st.session_state.all_data)
         st.session_state.current_question = current_question
-        correct_answer = current_question["correct_answer"]
-        st.session_state.correct_answer = correct_answer
+        st.session_state.correct_answer = current_question["correct_answer"]
 
-    # Display the current question
-    st.write("Question:", current_question["question"])
+    # Ensure all_data is available before proceeding
+    if 'all_data' in st.session_state:
+        # Retrieve the current question and correct answer
+        if 'current_question' not in st.session_state:
+            current_question = random.choice(st.session_state.all_data)
+            st.session_state.current_question = current_question
+            st.session_state.correct_answer = current_question["correct_answer"]
+        else:
+            current_question = st.session_state.current_question
 
-    # Display the supporting text
-    support_text = current_question["support"]
-    st.write("Supporting Text:", support_text)
+        # Define correct_answer here so it's accessible outside of the if block
+        correct_answer = st.session_state.correct_answer
+
+        # Display the current question
+        st.write("Question:", current_question["question"])
+
+        # Display the supporting text
+        support_text = current_question["support"]
+        st.write("Supporting Text:", support_text)
 
     options = [
         current_question["correct_answer"],
