@@ -13,6 +13,16 @@ from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, TensorDataset
 import pandas as pd
 
+import nltk
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
+import string
+from sklearn.feature_extraction.text import CountVectorizer
+
+
+nltk.download('stopwords')
+nltk.download('punkt')
+
 if 'sbert_model' not in st.session_state:
     st.session_state.sbert_model = SentenceTransformer('paraphrase-distilroberta-base-v1')
 
@@ -80,6 +90,25 @@ def preprocess_text_with_siamese(text):
     
     return numerical_tensor
 
+def preprocess_text_bow(text):
+    # Convert text to lowercase
+    text = text.lower()
+
+    # Tokenize the text into words
+    tokens = word_tokenize(text)
+
+    # Remove punctuation and special characters
+    tokens = [word for word in tokens if word not in string.punctuation]
+
+    # Remove stopwords
+    stop_words = set(stopwords.words('english'))
+    tokens = [word for word in tokens if word not in stop_words]
+
+    # Join the tokens back into a single string
+    processed_text = ' '.join(tokens)
+
+    return processed_text
+
 # Function to compute similarity using Siamese network
 def compute_similarity_siamese(text1, text2):
     processed_text1 = [preprocess_text_with_siamese(text1)]
@@ -101,6 +130,23 @@ def compute_similarity_sbert(text1, text2):
     emb1_2d = emb1.reshape(1, -1)
     emb2_2d = emb2.reshape(1, -1)
     similarity = cosine_similarity(emb1_2d, emb2_2d)[0][0]
+    return similarity
+
+def create_bow_vectors(text1, text2):
+    vectorizer = CountVectorizer()
+
+    bow_matrix = vectorizer.fit_transform([text1, text2])
+
+    return bow_matrix
+
+
+def compute_similarity_bow(text1, text2):
+    processed_text1 = preprocess_text_bow(text1)
+    processed_text2 = preprocess_text_bow(text2)
+    
+    bow_matrix = create_bow_vectors(processed_text1, processed_text2)
+    
+    similarity = cosine_similarity(bow_matrix[0], bow_matrix[1])[0][0]
     return similarity
 
 def main():
@@ -144,24 +190,33 @@ def main():
         current_question["distractor3"]
     ]
 
-    max_similarity_sbert = 0
+    max_similarity_bow = 0.0
+    predicted_option_bow = ""
+    max_similarity_sbert = 0.0
     predicted_option_sbert = ""
-    max_similarity_siamese = 0
+    max_similarity_siamese = 0.0
     predicted_option_siamese = ""
 
-    column_headers = ["", "SBERT Cosine Similarity", "Siamese Networks"]
+    column_headers = ["", "BoW", "SBERT Cosine Similarity", "Siamese Networks"]
     option_scores = []
 
     for option in options:
         modified_option, used_option = modify_question_with_option(current_question["question"], option)
 
+        # bag of words
+        similarity_score_bow = compute_similarity_bow(modified_option, support_text) * 100.0
+
         # Compute similarity using SBERT
-        similarity_score_sbert = compute_similarity_sbert(modified_option, support_text) * 100
+        similarity_score_sbert = compute_similarity_sbert(modified_option, support_text) * 100.0
 
         # Compute similarity using Siamese network
-        similarity_score_siamese = compute_similarity_siamese(modified_option, support_text) * 100
+        similarity_score_siamese = compute_similarity_siamese(modified_option, support_text) * 100.0
 
-        option_scores.append([option, f"{float(similarity_score_sbert):.2f}%", f"{float(similarity_score_siamese):.2f}%"])
+        option_scores.append([option, f"{float(similarity_score_bow):.2f}%", f"{float(similarity_score_sbert):.2f}%", f"{float(similarity_score_siamese):.2f}%"])
+
+        if similarity_score_bow > max_similarity_bow:
+            max_similarity_bow = similarity_score_bow
+            predicted_option_bow = option
 
         if similarity_score_sbert > max_similarity_sbert:
             max_similarity_sbert = similarity_score_sbert
@@ -173,7 +228,12 @@ def main():
 
     st.write("Options and Scores:")
 
-    option_scores.append(["Predicted Answer", predicted_option_sbert, predicted_option_siamese])
+    option_scores.append(["Predicted Answer", predicted_option_bow, predicted_option_sbert, predicted_option_siamese])
+
+    if correct_answer == predicted_option_bow:
+        bow_prediction = "Correct!"
+    else:
+        bow_prediction = "Wrong!"
 
     if correct_answer == predicted_option_sbert:
         sbert_prediction = "Correct!"
@@ -185,22 +245,26 @@ def main():
     else:
         siamese_prediction = "Wrong!"
 
-    option_scores.append(["Evaluation", sbert_prediction, siamese_prediction])
+    option_scores.append(["Evaluation", bow_prediction, sbert_prediction, siamese_prediction])
     option_table = pd.DataFrame(option_scores, columns=column_headers)
-    st.table(option_table)
+    st.dataframe(option_table)
 
     st.write("Correct Answer:", correct_answer)
 
     # Add a text area for user input and evaluation
-    st.write("\n\nEvaluate Your Answer")
+    st.write("\n\nEvaluate Your Own Answer")
     user_answer = st.text_area("Type your answer here:")
     evaluate_button = st.button("Evaluate")
 
     if evaluate_button:
-        if user_answer == correct_answer:
-            st.markdown('<span style="color:green">Your Answer is Correct!</span>', unsafe_allow_html=True)
+        similarity_score_siamese = compute_similarity_siamese(user_answer, support_text) * 100.0
+        st.write(f"Siamese Similarity Score: {float(similarity_score_siamese):.2f}%")
+        # pay attention to the threshold 
+        siamese_threshold = 0.1
+        if similarity_score_siamese >= siamese_threshold:
+            st.markdown('<span style="color:green">Siamese Network: Your Answer is Correct!</span>', unsafe_allow_html=True)
         else:
-            st.markdown('<span style="color:red">Your Answer is Wrong!</span>', unsafe_allow_html=True)
+            st.markdown('<span style="color:red">Siamese Network: Your Answer is Wrong!</span>', unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
