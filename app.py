@@ -30,6 +30,14 @@ def modify_question_with_option(question, option):
             return modified_question.lower().replace(word, option).capitalize(), option
     return question + " " + option, None
 
+def highlight_prediction(df):
+    df.loc[0] = ["",""]
+    df.loc[1] = df.loc[1].apply(lambda x:"color: green" if x == 'Correct!' else "color: red")
+    return df
+
+def highlight_correct_answer(ser,correct_ans):
+    return ["background-color: lightgreen" if val == correct_ans else "" for val in ser]
+
 # Initialize the SBERT model
 sbert_model = SentenceTransformer('paraphrase-distilroberta-base-v1')
 
@@ -98,7 +106,7 @@ def compute_similarity_sbert(text1, text2):
     return similarity
 
 def main():
-    st.title("Automated Answer Evaluation")
+    st.title("Automated Answer Validation")
 
     # Check session state and populate if necessary
     if 'samples' not in st.session_state:
@@ -116,8 +124,8 @@ def main():
         st.session_state.samples = get_random_samples(all_data)
 
     # Display a button to go to the next question
-    if st.button('Next'):
-        st.session_state.samples = get_random_samples(all_data)
+    if st.button('Next question',type='primary'):
+        st.session_state.samples = get_random_samples(all_data) #Fails after clicking next button
 
     # Retrieve the current question and correct answer
     current_question = st.session_state.current_question
@@ -130,11 +138,20 @@ def main():
         st.session_state.correct_answer = correct_answer
 
     # Display the current question
-    st.write("Question:", current_question["question"])
+    st.subheader('Question')
+    st.write(current_question["question"])
+
+    st.markdown(" * "+current_question["correct_answer"])
+    st.markdown(" * "+current_question["distractor1"])
+    st.markdown(" * "+current_question["distractor2"])
+    st.markdown(" * "+current_question["distractor1"])
 
     # Display the supporting text
     support_text = current_question["support"]
-    st.write("Supporting Text:", support_text)
+    with st.expander('Supporting text'):
+        st.write(support_text)
+
+    st.divider()
 
     options = [
         current_question["correct_answer"],
@@ -143,12 +160,25 @@ def main():
         current_question["distractor3"]
     ]
 
+    # Add a text area for user input and evaluation
+    st.subheader("Evaluate Your Answer")
+    user_answer = st.text_input("Type your answer here:")
+    evaluate_button = st.button("Evaluate",type='primary')
+
+    if evaluate_button:
+        if user_answer == correct_answer:
+            st.markdown('<span style="color:green">Your Answer is Correct!</span>', unsafe_allow_html=True)
+        else:
+            st.markdown('<span style="color:red">Your Answer is Wrong!</span>', unsafe_allow_html=True)
+
+    st.divider()
+
     max_similarity_sbert = 0
     predicted_option_sbert = ""
     max_similarity_siamese = 0
     predicted_option_siamese = ""
 
-    column_headers = ["", "SBERT Cosine Similarity", "Siamese Networks"]
+    column_headers = ["Option", "SBERT Cosine Similarity", "Siamese Networks"]
     option_scores = []
 
     for option in options:
@@ -170,9 +200,12 @@ def main():
             max_similarity_siamese = similarity_score_siamese
             predicted_option_siamese = option
 
-    st.write("Options and Scores:")
+    st.subheader("Similarity Scores")
 
-    option_scores.append(["Predicted Answer", predicted_option_sbert, predicted_option_siamese])
+    predictions_headers=['','SBERT Cosine Similarity','Siamese Networks']
+    predictions_df = []
+
+    predictions_df.append(["Predicted Answer", predicted_option_sbert, predicted_option_siamese])
 
     if correct_answer == predicted_option_sbert:
         sbert_prediction = "Correct!"
@@ -184,22 +217,15 @@ def main():
     else:
         siamese_prediction = "Wrong!"
 
-    option_scores.append(["Evaluation", sbert_prediction, siamese_prediction])
+    predictions_df.append(["Evaluation", sbert_prediction, siamese_prediction])
     option_table = pd.DataFrame(option_scores, columns=column_headers)
-    st.table(option_table)
+    predictions_table = pd.DataFrame(predictions_df, columns=predictions_headers)
 
-    st.write("Correct Answer:", correct_answer)
-
-    # Add a text area for user input and evaluation
-    st.write("\n\nEvaluate Your Answer")
-    user_answer = st.text_area("Type your answer here:")
-    evaluate_button = st.button("Evaluate")
-
-    if evaluate_button:
-        if user_answer == correct_answer:
-            st.markdown('<span style="color:green">Your Answer is Correct!</span>', unsafe_allow_html=True)
-        else:
-            st.markdown('<span style="color:red">Your Answer is Wrong!</span>', unsafe_allow_html=True)
+    st.data_editor(predictions_table.style.apply(highlight_prediction,axis=None,subset=option_table.columns[-2:]),
+                   hide_index=True,use_container_width=True,disabled=True)
+    with st.expander('Show Prediction metrics'):
+        st.data_editor(option_table.style.apply(highlight_correct_answer,correct_ans = correct_answer,subset=['Option']).highlight_max(color='lightgreen',subset=option_table.columns[-2:]),
+                   use_container_width=True,hide_index=True,disabled=True)
 
 if __name__ == "__main__":
     main()
