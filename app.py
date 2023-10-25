@@ -149,15 +149,24 @@ def compute_similarity_bow(text1, text2):
     similarity = cosine_similarity(bow_matrix[0], bow_matrix[1])[0][0]
     return similarity
 
+def highlight_prediction(df):
+    df.loc[0] = ["","",""]
+    df.loc[1] = df.loc[1].apply(lambda x:"color: green" if x == 'Correct!' else "color: red")
+    return df
+
+def highlight_correct_answer(ser,correct_ans):
+    return ["background-color: lightgreen" if val == correct_ans else "" for val in ser]
+
+
 def main():
-    st.title("Automated Answer Evaluation")
+    st.title("Automated Answer Validation")
 
     # Load all data initially if not already loaded
     if 'all_data' not in st.session_state:
         st.session_state.all_data = load_questions_from_json("./data/sciq/train.json")
 
     # Display a button to go to the next question
-    if st.button('Next'):
+    if st.button('Next question',type='primary'):
         # Update current_question and correct_answer with a new random question
         current_question = random.choice(st.session_state.all_data)
         st.session_state.current_question = current_question
@@ -176,12 +185,20 @@ def main():
         # Define correct_answer here so it's accessible outside of the if block
         correct_answer = st.session_state.correct_answer
 
-        # Display the current question
-        st.write("Question:", current_question["question"])
+        # Display the current question with options
+        st.subheader('Question')
+        st.write(current_question["question"])
+
+        st.markdown(" * "+current_question["correct_answer"])
+        st.markdown(" * "+current_question["distractor1"])
+        st.markdown(" * "+current_question["distractor2"])
+        st.markdown(" * "+current_question["distractor1"])
 
         # Display the supporting text
         support_text = current_question["support"]
-        st.write("Supporting Text:", support_text)
+        with st.expander('Supporting text'):
+            st.write(support_text)
+        st.divider()
 
     options = [
         current_question["correct_answer"],
@@ -190,6 +207,22 @@ def main():
         current_question["distractor3"]
     ]
 
+    # Add a text area for user input and evaluation
+    st.subheader("Evaluate Your Answer")
+    user_answer = st.text_input("Type your answer here:")
+    evaluate_button = st.button("Evaluate",type='primary')
+
+    if evaluate_button:
+        similarity_score_siamese = compute_similarity_siamese(user_answer, support_text) * 100.0
+        st.write(f"Siamese Similarity Score: {float(similarity_score_siamese):.2f}%")
+        # pay attention to the threshold 
+        siamese_threshold = 0.1
+        if similarity_score_siamese >= siamese_threshold:
+            st.markdown('<span style="color:green">Siamese Network: Your Answer is Correct!</span>', unsafe_allow_html=True)
+        else:
+            st.markdown('<span style="color:red">Siamese Network: Your Answer is Wrong!</span>', unsafe_allow_html=True)
+    st.divider()
+
     max_similarity_bow = 0.0
     predicted_option_bow = ""
     max_similarity_sbert = 0.0
@@ -197,7 +230,7 @@ def main():
     max_similarity_siamese = 0.0
     predicted_option_siamese = ""
 
-    column_headers = ["", "BoW", "SBERT Cosine Similarity", "Siamese Networks"]
+    column_headers = ["Option", "BoW", "SBERT Cosine Similarity", "Siamese Networks"]
     option_scores = []
 
     for option in options:
@@ -226,9 +259,12 @@ def main():
             max_similarity_siamese = similarity_score_siamese
             predicted_option_siamese = option
 
-    st.write("Options and Scores:")
+    st.subheader("Similarity Scores")
 
-    option_scores.append(["Predicted Answer", predicted_option_bow, predicted_option_sbert, predicted_option_siamese])
+    predictions_headers=['','BoW','SBERT Cosine Similarity','Siamese Networks']
+    predictions_df = []
+
+    predictions_df.append(["Predicted Answer", predicted_option_bow, predicted_option_sbert, predicted_option_siamese])
 
     if correct_answer == predicted_option_bow:
         bow_prediction = "Correct!"
@@ -245,26 +281,16 @@ def main():
     else:
         siamese_prediction = "Wrong!"
 
-    option_scores.append(["Evaluation", bow_prediction, sbert_prediction, siamese_prediction])
+    predictions_df.append(["Evaluation", bow_prediction, sbert_prediction, siamese_prediction])
     option_table = pd.DataFrame(option_scores, columns=column_headers)
-    st.dataframe(option_table)
 
-    st.write("Correct Answer:", correct_answer)
+    predictions_table = pd.DataFrame(predictions_df, columns=predictions_headers)
+    st.data_editor(predictions_table.style.apply(highlight_prediction,axis=None,subset=option_table.columns[1:]),
+                   hide_index=True,use_container_width=True,disabled=True)
+    with st.expander('Show Prediction metrics'):
+        st.data_editor(option_table.style.apply(highlight_correct_answer,correct_ans = correct_answer,subset=['Option']).highlight_max(color='lightgreen',subset=option_table.columns[1:]),
+                   use_container_width=True,hide_index=True,disabled=True)
 
-    # Add a text area for user input and evaluation
-    st.write("\n\nEvaluate Your Own Answer")
-    user_answer = st.text_area("Type your answer here:")
-    evaluate_button = st.button("Evaluate")
-
-    if evaluate_button:
-        similarity_score_siamese = compute_similarity_siamese(user_answer, support_text) * 100.0
-        st.write(f"Siamese Similarity Score: {float(similarity_score_siamese):.2f}%")
-        # pay attention to the threshold 
-        siamese_threshold = 0.1
-        if similarity_score_siamese >= siamese_threshold:
-            st.markdown('<span style="color:green">Siamese Network: Your Answer is Correct!</span>', unsafe_allow_html=True)
-        else:
-            st.markdown('<span style="color:red">Siamese Network: Your Answer is Wrong!</span>', unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
